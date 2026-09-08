@@ -863,7 +863,7 @@ io.on("connection", (socket) => {
     if (room && room.dlc !== clientDlc) {
       socket.emit(
         "roomError",
-        `⛔ 加入失敗！\n此房間設定為：${room.dlc ? "🧪 化學 DLC 模式" : "🎮 一般對戰"}\n您的設定與房間不符，請更改後再加入。`,
+        `⛔ 加入失敗！請設為：${room.dlc ? "🧪 化學 DLC 模式" : "🎮 一般對戰"}，再加入。`,
       );
       return;
     }
