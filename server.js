@@ -384,56 +384,37 @@ function checkRoomReady(roomCode) {
 // ============================================================
 // 建立房間
 // ============================================================
-
-function createRoom(socket, playerName) {
+function createRoom(socket, playerName, dlc) {
   const roomCode = generateRoomCode();
-
   const player = createPlayer(socket, playerName);
 
   rooms[roomCode] = {
     code: roomCode,
-    dlc: !!dlc, // ★ 新增這行：紀錄該房間是否開啟 DLC
+    dlc: !!dlc, // ★ 儲存房間 DLC 狀態
     hostId: socket.id,
-
     players: { [socket.id]: player },
-
     status: "waiting",
-
     countdownTimer: null,
-
     countdownValue: null,
-
-    game: {
-      startedAt: null,
-
-      seed: Math.floor(Math.random() * 1000000000),
-    },
+    game: { startedAt: null, seed: Math.floor(Math.random() * 1000000000) },
   };
 
   socket.join(roomCode);
-
   socket.currentRoom = roomCode;
-
   socket.playerName = player.name;
 
   console.log(
-    `[Lobby] 建立房間 ${roomCode}，` + `房主 ${player.name} (${socket.id})`,
+    `[Lobby] 建立房間 ${roomCode}，房主 ${player.name} (${socket.id}) DLC: ${!!dlc}`,
   );
 
-  socket.emit("roomCreated", {
-    code: roomCode,
-
-    room: getLobbyState(roomCode),
-  });
+  socket.emit("roomCreated", { code: roomCode, room: getLobbyState(roomCode) });
 
   // 舊版相容
   socket.emit("roomCreatedLegacy", roomCode);
-
   broadcastLobby(roomCode);
 
   return roomCode;
 }
-
 // ============================================================
 // 加入房間
 // ============================================================
@@ -839,43 +820,57 @@ io.on("connection", (socket) => {
   // ==========================================================
   // 建立房間
   // ==========================================================
-
-socket.on("createRoom", (data) => {
+  socket.on("createRoom", (data) => {
     let playerName = socket.playerName;
-    let dlc = false; // ★
-    if (typeof data === "string") playerName = data;
+    let dlc = false;
+
+    if (typeof data === "string") {
+      playerName = data;
+    }
+
     if (data && typeof data === "object") {
       playerName = data.name || data.playerName || playerName;
-      dlc = data.dlc; // ★ 接收 DLC 參數
+      dlc = !!data.dlc; // ★ 接收 DLC 參數
     }
-    if (socket.currentRoom) leaveCurrentRoom(socket);
-    createRoom(socket, playerName, dlc); // ★ 傳入 dlc
+
+    if (socket.currentRoom) {
+      leaveCurrentRoom(socket);
+    }
+
+    createRoom(socket, playerName, dlc); // ★ 將參數傳入核心函式
   });
 
   // ==========================================================
   // 加入房間
   // ==========================================================
-
   socket.on("joinRoom", (data) => {
     let roomCode = "";
     let playerName = socket.playerName;
-    let clientDlc = false; // ★
-    if (typeof data === "string") roomCode = data;
+    let clientDlc = false;
+
+    if (typeof data === "string") {
+      roomCode = data;
+    }
+
     if (data && typeof data === "object") {
       roomCode = data.code || data.roomCode || "";
       playerName = data.name || data.playerName || playerName;
-      clientDlc = data.dlc; // ★ 接收加入者的 DLC 設定
+      clientDlc = !!data.dlc; // ★ 接收加入者的 DLC 設定
     }
 
-    // ★ 伺服器端防呆：比對設定是否相符
+    // ★ 伺服器端無情防呆攔截
     const room = rooms[roomCode.toUpperCase()];
-    if (room && room.dlc !== !!clientDlc) {
-      socket.emit("roomError", `⛔ 加入失敗！\n此房間設定為：${room.dlc ? "🧪 化學 DLC 模式" : "🎮 一般對戰"}\n您的設定與房間不符，請更改後再加入。`);
+    if (room && room.dlc !== clientDlc) {
+      socket.emit(
+        "roomError",
+        `⛔ 加入失敗！\n此房間設定為：${room.dlc ? "🧪 化學 DLC 模式" : "🎮 一般對戰"}\n您的設定與房間不符，請更改後再加入。`,
+      );
       return;
     }
 
     joinRoom(socket, roomCode, playerName);
   });
+
   // ==========================================================
   // 取得 Lobby
   // ==========================================================
