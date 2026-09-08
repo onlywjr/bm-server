@@ -110,7 +110,7 @@ function getLobbyState(roomCode) {
 
   return {
     code: roomCode,
-
+    dlc: room.dlc, // ★ 新增這行：廣播房間的 DLC 狀態
     status: room.status,
 
     maxPlayers: MAX_PLAYERS,
@@ -392,7 +392,7 @@ function createRoom(socket, playerName) {
 
   rooms[roomCode] = {
     code: roomCode,
-
+    dlc: !!dlc, // ★ 新增這行：紀錄該房間是否開啟 DLC
     hostId: socket.id,
 
     players: { [socket.id]: player },
@@ -840,22 +840,16 @@ io.on("connection", (socket) => {
   // 建立房間
   // ==========================================================
 
-  socket.on("createRoom", (data) => {
+socket.on("createRoom", (data) => {
     let playerName = socket.playerName;
-
-    if (typeof data === "string") {
-      playerName = data;
-    }
-
+    let dlc = false; // ★
+    if (typeof data === "string") playerName = data;
     if (data && typeof data === "object") {
       playerName = data.name || data.playerName || playerName;
+      dlc = data.dlc; // ★ 接收 DLC 參數
     }
-
-    if (socket.currentRoom) {
-      leaveCurrentRoom(socket);
-    }
-
-    createRoom(socket, playerName);
+    if (socket.currentRoom) leaveCurrentRoom(socket);
+    createRoom(socket, playerName, dlc); // ★ 傳入 dlc
   });
 
   // ==========================================================
@@ -864,22 +858,24 @@ io.on("connection", (socket) => {
 
   socket.on("joinRoom", (data) => {
     let roomCode = "";
-
     let playerName = socket.playerName;
-
-    if (typeof data === "string") {
-      roomCode = data;
-    }
-
+    let clientDlc = false; // ★
+    if (typeof data === "string") roomCode = data;
     if (data && typeof data === "object") {
       roomCode = data.code || data.roomCode || "";
-
       playerName = data.name || data.playerName || playerName;
+      clientDlc = data.dlc; // ★ 接收加入者的 DLC 設定
+    }
+
+    // ★ 伺服器端防呆：比對設定是否相符
+    const room = rooms[roomCode.toUpperCase()];
+    if (room && room.dlc !== !!clientDlc) {
+      socket.emit("roomError", `⛔ 加入失敗！\n此房間設定為：${room.dlc ? "🧪 化學 DLC 模式" : "🎮 一般對戰"}\n您的設定與房間不符，請更改後再加入。`);
+      return;
     }
 
     joinRoom(socket, roomCode, playerName);
   });
-
   // ==========================================================
   // 取得 Lobby
   // ==========================================================
