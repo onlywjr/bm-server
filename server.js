@@ -1170,21 +1170,42 @@ io.on("connection", (socket) => {
     // 技能種類
     // ======================================================
 
-    const allowedTypes = ["reverse", "shrink", "garbage", "blind", "speed"];
+    const allowedTypes = [
+      "reverse",
+      "shrink",
+      "garbage",
+      "blind",
+      "speed",
+      // ★ 補上所有化學 DLC 的攻擊/干擾類型
+      "damage_hp",
+      "shrink_width",
+      "slow_speed",
+      "freeze",
+      "reverse_controls",
+      "blind_screen",
+      "unstable_countdown",
+      "radiation_debuff",
+      "unstable_debuff",
+      "chaos_trajectory",
+      "magnetic_pull",
+      "fake_ball_illusion",
+      "storm_disruption",
+      "visual_distortion",
+      "fog_blind",
+    ];
 
     let type = data?.type;
-
     if (!allowedTypes.includes(type)) {
-      type = "reverse";
+      type = "reverse_controls"; // 找不到就給預設的反轉
     }
 
     // ======================================================
     // 強度
     // ======================================================
-
+    
     let power = Number(data?.power) || 1;
-
-    power = Math.max(1, Math.min(2, power));
+    // ★ 配合 DLC 升級系統，將威力上限放寬到 20 (或更高)
+    power = Math.max(1, Math.min(20, power));
 
     // ======================================================
     // 消耗 Energy
