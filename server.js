@@ -973,33 +973,51 @@ io.on("connection", (socket) => {
     // --------------------------------------------------------
 
     const now = Date.now();
-
-    if (now - player.lastStateAt < STATE_INTERVAL_MS) {
+    // 伺服器端強制冷卻：絕對不允許玩家在 3 秒內連續發動技能
+    if (
+      attacker.lastAttackTimestamp
+      && now - attacker.lastAttackTimestamp < 3000
+    ) {
+      socket.emit("onlineAttackRejected", {
+        reason: "SERVER_COOLDOWN",
+        energy: attacker.energy,
+      });
       return;
     }
-
-    player.lastStateAt = now;
+    attacker.lastAttackTimestamp = now;
 
     // --------------------------------------------------------
     // 基本資料
     // --------------------------------------------------------
 
     if (typeof state?.score === "number") {
-      player.score = Math.max(0, Math.floor(state.score));
+      // 分數防爆增：限制單次狀態更新的最高得分幅度，並防止分數被惡意倒扣
+      const maxAllowedDelta = 500;
+      if (state.score > player.score + maxAllowedDelta) {
+        player.score += maxAllowedDelta;
+      } else {
+        player.score = Math.max(player.score, Math.floor(state.score));
+      }
     }
 
     if (typeof state?.alive === "boolean") {
+      // 死亡單向鎖：一旦 Server 判定淘汰，強制拒絕任何復活請求
+      if (!player.alive && state.alive) return;
+
       if (player.alive && !state.alive) {
         eliminatePlayer(roomCode, player.id);
-
         return;
       }
-
       player.alive = state.alive;
     }
 
     if (typeof state?.energy === "number") {
-      player.energy = Math.max(0, Math.min(10, state.energy));
+      // 能量增量防護：每次 80ms 的狀態更新中，最多只允許增加 2 點能量
+      if (state.energy > player.energy + 2) {
+        player.energy = Math.min(10, player.energy + 2);
+      } else {
+        player.energy = Math.max(0, Math.min(10, state.energy));
+      }
     }
 
     if (typeof state?.level === "number") {
