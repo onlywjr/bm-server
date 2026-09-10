@@ -1139,45 +1139,41 @@ io.on("connection", (socket) => {
     attacker.lastAttackTimestamp = now;
 
     // ======================================================
-    // Energy 驗證 (修復 P0/P1：完全移除對 clientEnergy 的信任)
+    // Energy 驗證 (化學 DLC 模式下免扣能量)
     // ======================================================
-    // 伺服器只相信自己計算的 attacker.energy (來自 playerState 嚴格把關的每幀 +2)
-    if (attacker.energy < 10) {
-      socket.emit("onlineAttackRejected", {
-        reason: "ENERGY_NOT_READY",
-        energy: attacker.energy,
-      });
-      console.log(`[Attack] ${attacker.name} 攻擊失敗：Energy 不足`);
-      return;
+    const isDlc = room.dlc;
+    if (!isDlc) {
+      if (attacker.energy < 10) {
+        socket.emit("onlineAttackRejected", {
+          reason: "ENERGY_NOT_READY",
+          energy: attacker.energy,
+        });
+        return;
+      }
+      attacker.energy = 0; // 舊模式消耗能量
     }
 
     // ======================================================
-    // 找攻擊目標
+    // 找攻擊目標 (維持不變)
     // ======================================================
-
     const target = selectAttackTarget(room, attacker);
-
     if (!target) {
       socket.emit("onlineAttackRejected", {
         reason: "NO_TARGET",
-
         energy: attacker.energy,
       });
-
       return;
     }
 
     // ======================================================
-    // 技能種類
+    // 技能種類、時間與強度 (修復 P1：區分倍率與絕對值)
     // ======================================================
-
     const allowedTypes = [
       "reverse",
       "shrink",
       "garbage",
       "blind",
       "speed",
-      // ★ 補上所有化學 DLC 的攻擊/干擾類型
       "damage_hp",
       "shrink_width",
       "slow_speed",
@@ -1196,43 +1192,32 @@ io.on("connection", (socket) => {
     ];
 
     let type = data?.type;
-    if (!allowedTypes.includes(type)) {
-      type = "reverse_controls"; // 找不到就給預設的反轉
-    }
+    if (!allowedTypes.includes(type)) type = "reverse_controls";
 
-    // ======================================================
-    // 強度
-    // ======================================================
+    // ★ 補上遺失的持續時間，並設定伺服器安全極限
+    let durationSec = Number(data?.durationSec) || 3;
+    durationSec = Math.max(0.5, Math.min(30, durationSec));
 
+    // ★ 依照類型動態限制 Power (防止 slow_speed 0.5 被硬改成 1)
     let power = Number(data?.power) || 1;
-    // ★ 配合 DLC 升級系統，將威力上限放寬到 20 (或更高)
-    power = Math.max(1, Math.min(20, power));
-
-    // ======================================================
-    // 消耗 Energy
-    // ======================================================
-
-    attacker.energy = 0;
+    if (["shrink_width", "slow_speed", "modify_speed"].includes(type)) {
+      power = Math.max(0.1, Math.min(1, power));
+    } else {
+      power = Math.max(1, Math.min(20, power));
+    }
 
     // ======================================================
     // 傳送攻擊
     // ======================================================
-
     io.to(target.id).emit("playerAttacked", {
       attackerId: attacker.id,
-
       attackerName: attacker.name,
-
       targetId: target.id,
-
       targetName: target.name,
-
       power,
-
       type,
-
+      durationSec, // ★ 正確轉發給 Client
       attackId,
-
       timestamp: Date.now(),
     });
 
