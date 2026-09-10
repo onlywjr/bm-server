@@ -968,6 +968,9 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // ★ 終極死亡防線：一旦 Server 標記淘汰，直接丟棄所有狀態同步封包
+    if (!player.alive) return;
+
     // --------------------------------------------------------
     // 限制更新頻率 (修復：擋下狂發 +500 分數的惡意洗分)
     // --------------------------------------------------------
@@ -983,16 +986,14 @@ io.on("connection", (socket) => {
     if (typeof state?.score === "number") {
       const maxAllowedDelta = 500;
       if (state.score > player.score + maxAllowedDelta) {
-        player.score += maxAllowedDelta; // 限制單次更新最高只給 500
+        player.score += maxAllowedDelta;
       } else {
-        player.score = Math.max(player.score, Math.floor(state.score));
+        // ★ 允許合法扣分，僅確保最低分為 0
+        player.score = Math.max(0, Math.floor(state.score));
       }
     }
 
     if (typeof state?.alive === "boolean") {
-      // 死亡單向鎖：已死亡不可復活
-      if (!player.alive && state.alive) return;
-
       if (player.alive && !state.alive) {
         eliminatePlayer(roomCode, player.id);
         return;
@@ -1202,7 +1203,7 @@ io.on("connection", (socket) => {
     // ======================================================
     // 強度
     // ======================================================
-    
+
     let power = Number(data?.power) || 1;
     // ★ 配合 DLC 升級系統，將威力上限放寬到 20 (或更高)
     power = Math.max(1, Math.min(20, power));
@@ -1281,14 +1282,14 @@ io.on("connection", (socket) => {
 
     // 如果玩家已經死亡，不要重複處理
     if (!player.alive) return;
-
-    // 接收死亡前最後分數 (修復 P1：堵住死亡時偽造 99999999 分的漏洞)
+    // 接收死亡前最後分數
     if (typeof data?.score === "number") {
       const maxAllowedDelta = 500;
       if (data.score > player.score + maxAllowedDelta) {
         player.score += maxAllowedDelta;
       } else {
-        player.score = Math.max(player.score, Math.floor(data.score));
+        // ▼▼▼ 修正這裡：允許合法扣分，僅確保最低分為 0 ▼▼▼
+        player.score = Math.max(0, Math.floor(data.score));
       }
     }
 
