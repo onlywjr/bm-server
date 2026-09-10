@@ -969,39 +969,28 @@ io.on("connection", (socket) => {
     }
 
     // --------------------------------------------------------
-    // 限制更新頻率
+    // 限制更新頻率 (修復：擋下狂發 +500 分數的惡意洗分)
     // --------------------------------------------------------
-
     const now = Date.now();
-    // 伺服器端強制冷卻：絕對不允許玩家在 3 秒內連續發動技能
-    if (
-      attacker.lastAttackTimestamp
-      && now - attacker.lastAttackTimestamp < 3000
-    ) {
-      socket.emit("onlineAttackRejected", {
-        reason: "SERVER_COOLDOWN",
-        energy: attacker.energy,
-      });
-      return;
+    if (now - player.lastStateAt < STATE_INTERVAL_MS) {
+      return; // 如果距離上次更新不到 80ms，直接丟棄封包
     }
-    attacker.lastAttackTimestamp = now;
+    player.lastStateAt = now;
 
     // --------------------------------------------------------
-    // 基本資料
+    // 基本資料防護 (修復 P0：移除錯誤的 attacker 邏輯)
     // --------------------------------------------------------
-
     if (typeof state?.score === "number") {
-      // 分數防爆增：限制單次狀態更新的最高得分幅度，並防止分數被惡意倒扣
       const maxAllowedDelta = 500;
       if (state.score > player.score + maxAllowedDelta) {
-        player.score += maxAllowedDelta;
+        player.score += maxAllowedDelta; // 限制單次更新最高只給 500
       } else {
         player.score = Math.max(player.score, Math.floor(state.score));
       }
     }
 
     if (typeof state?.alive === "boolean") {
-      // 死亡單向鎖：一旦 Server 判定淘汰，強制拒絕任何復活請求
+      // 死亡單向鎖：已死亡不可復活
       if (!player.alive && state.alive) return;
 
       if (player.alive && !state.alive) {
@@ -1012,14 +1001,13 @@ io.on("connection", (socket) => {
     }
 
     if (typeof state?.energy === "number") {
-      // 能量增量防護：每次 80ms 的狀態更新中，最多只允許增加 2 點能量
+      // 能量增量防護：每次 80ms 最多只允許 +2
       if (state.energy > player.energy + 2) {
         player.energy = Math.min(10, player.energy + 2);
       } else {
         player.energy = Math.max(0, Math.min(10, state.energy));
       }
     }
-
     if (typeof state?.level === "number") {
       player.level = Math.max(1, Math.floor(state.level));
     }
@@ -1133,27 +1121,33 @@ io.on("connection", (socket) => {
     }
 
     // ======================================================
-    // Energy 驗證
+    // 伺服器端強制冷卻 (修復 P0：3 秒內禁止連續發射)
     // ======================================================
-
-    const clientEnergy = Number(data?.energy);
-
-    if (attacker.energy < 10 && clientEnergy < 10) {
+    const now = Date.now();
+    if (
+      attacker.lastAttackTimestamp
+      && now - attacker.lastAttackTimestamp < 3000
+    ) {
       socket.emit("onlineAttackRejected", {
-        reason: "ENERGY_NOT_READY",
-
+        reason: "SERVER_COOLDOWN",
         energy: attacker.energy,
       });
-
-      console.log(`[Attack] ${attacker.name} 攻擊失敗：Energy 不足`);
-
+      console.log(`[Attack] ${attacker.name} 攻擊失敗：冷卻中`);
       return;
     }
+    attacker.lastAttackTimestamp = now;
 
-    // 前端確認已經滿能量
-    // 同步 Server 狀態
-    if (attacker.energy < 10 && clientEnergy >= 10) {
-      attacker.energy = 10;
+    // ======================================================
+    // Energy 驗證 (修復 P0/P1：完全移除對 clientEnergy 的信任)
+    // ======================================================
+    // 伺服器只相信自己計算的 attacker.energy (來自 playerState 嚴格把關的每幀 +2)
+    if (attacker.energy < 10) {
+      socket.emit("onlineAttackRejected", {
+        reason: "ENERGY_NOT_READY",
+        energy: attacker.energy,
+      });
+      console.log(`[Attack] ${attacker.name} 攻擊失敗：Energy 不足`);
+      return;
     }
 
     // ======================================================
@@ -1267,9 +1261,14 @@ io.on("connection", (socket) => {
     // 如果玩家已經死亡，不要重複處理
     if (!player.alive) return;
 
-    // 接收死亡前最後分數
+    // 接收死亡前最後分數 (修復 P1：堵住死亡時偽造 99999999 分的漏洞)
     if (typeof data?.score === "number") {
-      player.score = Math.max(0, Math.floor(data.score));
+      const maxAllowedDelta = 500;
+      if (data.score > player.score + maxAllowedDelta) {
+        player.score += maxAllowedDelta;
+      } else {
+        player.score = Math.max(player.score, Math.floor(data.score));
+      }
     }
 
     player.energy = 0;
